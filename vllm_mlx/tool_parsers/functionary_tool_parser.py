@@ -40,6 +40,15 @@ class FunctionaryToolParser(ToolParser):
     Used when --enable-auto-tool-choice --tool-call-parser functionary are set.
     """
 
+    def __init__(self, tokenizer=None):
+        super().__init__(tokenizer)
+        self._tool_calls_emitted = False
+
+    def reset(self) -> None:
+        """Reset parser state for a new request."""
+        super().reset()
+        self._tool_calls_emitted = False
+
     # Functionary chat templates support native tool message format
     SUPPORTS_NATIVE_TOOL_FORMAT = True
 
@@ -165,6 +174,10 @@ class FunctionaryToolParser(ToolParser):
         """
         Extract tool calls from streaming Functionary model output.
         """
+        # Once tool calls have been emitted, pass remaining content through
+        if self._tool_calls_emitted:
+            return {"content": delta_text}
+
         markers = ["<|recipient|>", "<function=", "["]
         has_marker = any(m in current_text for m in markers)
 
@@ -172,9 +185,10 @@ class FunctionaryToolParser(ToolParser):
             return {"content": delta_text}
 
         end_markers = ["<|content|>", "</function>", "]"]
-        if any(m in delta_text for m in end_markers):
+        if any(m in current_text for m in end_markers):
             result = self.extract_tool_calls(current_text)
             if result.tools_called:
+                self._tool_calls_emitted = True
                 return {
                     "tool_calls": [
                         {

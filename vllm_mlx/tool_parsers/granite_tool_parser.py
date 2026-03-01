@@ -38,6 +38,15 @@ class GraniteToolParser(ToolParser):
     Used when --enable-auto-tool-choice --tool-call-parser granite are set.
     """
 
+    def __init__(self, tokenizer=None):
+        super().__init__(tokenizer)
+        self._tool_calls_emitted = False
+
+    def reset(self) -> None:
+        """Reset parser state for a new request."""
+        super().reset()
+        self._tool_calls_emitted = False
+
     # Granite 3.1 chat templates support native tool message format
     SUPPORTS_NATIVE_TOOL_FORMAT = True
 
@@ -117,6 +126,10 @@ class GraniteToolParser(ToolParser):
         """
         Extract tool calls from streaming Granite model output.
         """
+        # Once tool calls have been emitted, pass remaining content through
+        if self._tool_calls_emitted:
+            return {"content": delta_text}
+
         stripped = current_text.strip()
         has_marker = stripped.startswith(self.BOT_TOKEN) or stripped.startswith(
             self.BOT_STRING
@@ -126,9 +139,10 @@ class GraniteToolParser(ToolParser):
             return {"content": delta_text}
 
         # Try to parse when we have a complete JSON array
-        if "]" in delta_text:
+        if "]" in current_text:
             result = self.extract_tool_calls(current_text)
             if result.tools_called:
+                self._tool_calls_emitted = True
                 return {
                     "tool_calls": [
                         {

@@ -39,6 +39,15 @@ class AutoToolParser(ToolParser):
     This is the default parser when no specific parser is selected.
     """
 
+    def __init__(self, tokenizer=None):
+        super().__init__(tokenizer)
+        self._tool_calls_emitted = False
+
+    def reset(self) -> None:
+        """Reset parser state for a new request."""
+        super().reset()
+        self._tool_calls_emitted = False
+
     # Patterns for different formats
     MISTRAL_TOKEN = "[TOOL_CALLS]"
 
@@ -325,6 +334,10 @@ class AutoToolParser(ToolParser):
 
         Uses simple heuristics to detect when a tool call might be complete.
         """
+        # Once tool calls have been emitted, pass remaining content through
+        if self._tool_calls_emitted:
+            return {"content": delta_text}
+
         # Check for any tool call markers
         markers = [
             self.MISTRAL_TOKEN,
@@ -340,9 +353,10 @@ class AutoToolParser(ToolParser):
 
         # Check for completion markers
         end_markers = ["</tool_call>", "</function>", ")]"]
-        if any(m in delta_text for m in end_markers):
+        if any(m in current_text for m in end_markers):
             result = self.extract_tool_calls(current_text)
             if result.tools_called:
+                self._tool_calls_emitted = True
                 return {
                     "tool_calls": [
                         {

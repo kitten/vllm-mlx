@@ -35,6 +35,15 @@ class LlamaToolParser(ToolParser):
     Used when --enable-auto-tool-choice --tool-call-parser llama are set.
     """
 
+    def __init__(self, tokenizer=None):
+        super().__init__(tokenizer)
+        self._tool_calls_emitted = False
+
+    def reset(self) -> None:
+        """Reset parser state for a new request."""
+        super().reset()
+        self._tool_calls_emitted = False
+
     # Llama 3+ chat templates support native tool message format
     SUPPORTS_NATIVE_TOOL_FORMAT = True
 
@@ -102,14 +111,19 @@ class LlamaToolParser(ToolParser):
         """
         Extract tool calls from streaming Llama model output.
         """
+        # Once tool calls have been emitted, pass remaining content through
+        if self._tool_calls_emitted:
+            return {"content": delta_text}
+
         # Check for tool call markers
         if "<function=" not in current_text:
             return {"content": delta_text}
 
         # If we detect end of function, parse
-        if "</function>" in delta_text:
+        if "</function>" in current_text:
             result = self.extract_tool_calls(current_text)
             if result.tools_called:
+                self._tool_calls_emitted = True
                 return {
                     "tool_calls": [
                         {

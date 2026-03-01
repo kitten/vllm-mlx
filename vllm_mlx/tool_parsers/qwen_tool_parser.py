@@ -43,6 +43,15 @@ class QwenToolParser(ToolParser):
     # Pattern for bracket-style: [Calling tool: func_name({...})]
     BRACKET_PATTERN = re.compile(r"\[Calling tool:\s*(\w+)\((\{.*?\})\)\]", re.DOTALL)
 
+    def __init__(self, tokenizer=None):
+        super().__init__(tokenizer)
+        self._tool_calls_emitted = False
+
+    def reset(self) -> None:
+        """Reset parser state for a new request."""
+        super().reset()
+        self._tool_calls_emitted = False
+
     def extract_tool_calls(
         self, model_output: str, request: dict[str, Any] | None = None
     ) -> ExtractedToolCallInformation:
@@ -125,6 +134,10 @@ class QwenToolParser(ToolParser):
         """
         Extract tool calls from streaming Qwen model output.
         """
+        # Once tool calls have been emitted, pass remaining content through
+        if self._tool_calls_emitted:
+            return {"content": delta_text}
+
         # Check for tool call markers
         has_tool_marker = (
             "<tool_call>" in current_text or "[Calling tool:" in current_text
@@ -134,11 +147,12 @@ class QwenToolParser(ToolParser):
             return {"content": delta_text}
 
         # If we're in a tool call, accumulate and parse at the end
-        # For simplicity, return None during accumulation
-        if "</tool_call>" in delta_text or ")]" in delta_text:
+        # Check current_text (not delta_text) so split closing tags are detected
+        if "</tool_call>" in current_text or ")]" in current_text:
             # Tool call complete, parse the whole thing
             result = self.extract_tool_calls(current_text)
             if result.tools_called:
+                self._tool_calls_emitted = True
                 return {
                     "tool_calls": [
                         {
@@ -154,4 +168,5 @@ class QwenToolParser(ToolParser):
                     ]
                 }
 
+        # Still accumulating tool call content
         return None

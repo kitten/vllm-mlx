@@ -39,6 +39,15 @@ class xLAMToolParser(ToolParser):
     Used when --enable-auto-tool-choice --tool-call-parser xlam are set.
     """
 
+    def __init__(self, tokenizer=None):
+        super().__init__(tokenizer)
+        self._tool_calls_emitted = False
+
+    def reset(self) -> None:
+        """Reset parser state for a new request."""
+        super().reset()
+        self._tool_calls_emitted = False
+
     # Patterns for extracting JSON
     CODE_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*([\s\S]*?)```")
     THINKING_PATTERN = re.compile(r"</think>\s*([\s\S]*)")
@@ -143,6 +152,10 @@ class xLAMToolParser(ToolParser):
         """
         Extract tool calls from streaming xLAM model output.
         """
+        # Once tool calls have been emitted, pass remaining content through
+        if self._tool_calls_emitted:
+            return {"content": delta_text}
+
         # Check for any indicators of tool calls
         markers = ["```", "[TOOL_CALLS]", "</think>"]
         has_marker = any(m in current_text for m in markers)
@@ -156,9 +169,10 @@ class xLAMToolParser(ToolParser):
             return {"content": delta_text}
 
         # Try to parse when we see completion markers
-        if "]" in delta_text or "```" in delta_text:
+        if "]" in current_text or "```" in current_text:
             result = self.extract_tool_calls(current_text)
             if result.tools_called:
+                self._tool_calls_emitted = True
                 return {
                     "tool_calls": [
                         {

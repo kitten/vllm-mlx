@@ -62,6 +62,15 @@ class HarmonyToolParser(ToolParser):
     Used when --enable-auto-tool-choice --tool-call-parser harmony are set.
     """
 
+    def __init__(self, tokenizer=None):
+        super().__init__(tokenizer)
+        self._tool_calls_emitted = False
+
+    def reset(self) -> None:
+        """Reset parser state for a new request."""
+        super().reset()
+        self._tool_calls_emitted = False
+
     SUPPORTS_NATIVE_TOOL_FORMAT = False
 
     def extract_tool_calls(
@@ -142,10 +151,15 @@ class HarmonyToolParser(ToolParser):
         Waits for <|call|> to complete a tool call, and emits final
         channel content as regular content deltas.
         """
-        # If we see a tool call completion marker in the delta
-        if "<|call|>" in delta_text:
+        # Once tool calls have been emitted, pass remaining content through
+        if self._tool_calls_emitted:
+            return {"content": delta_text}
+
+        # If we see a tool call completion marker in the accumulated text
+        if "<|call|>" in current_text:
             result = self.extract_tool_calls(current_text)
             if result.tools_called:
+                self._tool_calls_emitted = True
                 return {
                     "tool_calls": [
                         {

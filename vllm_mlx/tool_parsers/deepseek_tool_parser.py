@@ -44,6 +44,15 @@ class DeepSeekToolParser(ToolParser):
     Used when --enable-auto-tool-choice --tool-call-parser deepseek are set.
     """
 
+    def __init__(self, tokenizer=None):
+        super().__init__(tokenizer)
+        self._tool_calls_emitted = False
+
+    def reset(self) -> None:
+        """Reset parser state for a new request."""
+        super().reset()
+        self._tool_calls_emitted = False
+
     # DeepSeek V3 chat templates support native tool message format
     SUPPORTS_NATIVE_TOOL_FORMAT = True
 
@@ -145,13 +154,18 @@ class DeepSeekToolParser(ToolParser):
         """
         Extract tool calls from streaming DeepSeek model output.
         """
+        # Once tool calls have been emitted, pass remaining content through
+        if self._tool_calls_emitted:
+            return {"content": delta_text}
+
         if self.TOOL_CALLS_START not in current_text:
             return {"content": delta_text}
 
         # If we see the end marker, parse the complete output
-        if self.TOOL_CALL_END in delta_text or self.TOOL_CALLS_END in delta_text:
+        if self.TOOL_CALL_END in current_text or self.TOOL_CALLS_END in current_text:
             result = self.extract_tool_calls(current_text)
             if result.tools_called:
+                self._tool_calls_emitted = True
                 return {
                     "tool_calls": [
                         {

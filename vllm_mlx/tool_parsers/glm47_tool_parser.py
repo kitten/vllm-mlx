@@ -38,6 +38,15 @@ class Glm47ToolParser(ToolParser):
     Used when --enable-auto-tool-choice --tool-call-parser glm47 are set.
     """
 
+    def __init__(self, tokenizer=None):
+        super().__init__(tokenizer)
+        self._tool_calls_emitted = False
+
+    def reset(self) -> None:
+        """Reset parser state for a new request."""
+        super().reset()
+        self._tool_calls_emitted = False
+
     # Match entire tool call block
     TOOL_CALL_PATTERN = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
 
@@ -147,6 +156,10 @@ class Glm47ToolParser(ToolParser):
         """
         Extract tool calls from streaming GLM-4.7 model output.
         """
+        # Once tool calls have been emitted, pass remaining content through
+        if self._tool_calls_emitted:
+            return {"content": delta_text}
+
         # Skip thinking content in streaming
         if "<think>" in current_text and "</think>" not in current_text:
             return None
@@ -156,9 +169,10 @@ class Glm47ToolParser(ToolParser):
         # the non-streaming path sets content=None (reasoning before the
         # tag should not leak as regular content).
         if "<tool_call>" in current_text:
-            if "</tool_call>" in delta_text:
+            if "</tool_call>" in current_text:
                 result = self.extract_tool_calls(current_text, request)
                 if result.tools_called:
+                    self._tool_calls_emitted = True
                     return {
                         "tool_calls": [
                             {
